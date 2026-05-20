@@ -1,0 +1,71 @@
+version: 2
+
+models:
+  - name: int_trips__cleansed
+    description: >
+      Data-quality-filtered trips. Removes rows with out-of-range dates,
+      negative distances, and time-travel (pickup >= dropoff). Flags
+      suspect-but-keepable rows via is_suspect_row. Does NOT dedupe —
+      preserves surrogate-key collisions so the dedupe singular test
+      can catch them. {{ doc('caveat__store_and_fwd_dedupe') }}
+    columns:
+      - name: vendor_id
+        description: "TPEP provider ID."
+      - name: pickup_datetime
+        description: "Meter engaged timestamp (NYC local)."
+      - name: dropoff_datetime
+        description: "Meter disengaged timestamp (NYC local)."
+      - name: is_suspect_row
+        description: "True if the row has values outside normal ranges but was not hard-dropped."
+
+  - name: int_trips__deduped
+    description: >
+      One row per trip after surrogate-key deduplication. Uses
+      row_number() partitioned by trip_surrogate_id, ordered by
+      source_filename DESC then pickup_datetime ASC — picks the
+      latest-arriving file first, earliest pickup within that file.
+    columns:
+      - name: trip_surrogate_id
+        description: "Surrogate key: hash of vendor_id + pickup/dropoff datetime + pickup/dropoff location."
+        data_tests:
+          - unique
+          - not_null
+
+  - name: int_trips__enriched
+    description: >
+      Fully enriched trip records. Joins zones (pickup + dropoff),
+      payment-type labels, and rate-code labels. Derives
+      trip_duration_minutes, average_speed_mph, tip_pct_of_fare,
+      is_airport_trip, and is_cash_tip_unobservable.
+    columns:
+      - name: trip_surrogate_id
+        description: "Surrogate key from deduplication."
+        data_tests:
+          - unique
+          - not_null
+      - name: trip_duration_minutes
+        description: "Minutes between pickup and dropoff."
+      - name: average_speed_mph
+        description: "Trip distance / duration. Null when duration is zero."
+      - name: tip_pct_of_fare
+        description: >
+          Tip as a percentage of fare. Null when fare is zero.
+          {{ doc('caveat__cash_tip_invisibility') }}
+      - name: is_airport_trip
+        description: "True if pickup or dropoff zone is in the Airports service zone."
+      - name: is_cash_tip_unobservable
+        description: >
+          True when payment_type != 1 (not credit card), meaning
+          tip_amount is unobserved. {{ doc('caveat__cash_tip_invisibility') }}
+      - name: pickup_borough
+        description: "Borough of the pickup zone."
+      - name: pickup_zone_name
+        description: "Neighborhood name of the pickup zone."
+      - name: dropoff_borough
+        description: "Borough of the dropoff zone."
+      - name: dropoff_zone_name
+        description: "Neighborhood name of the dropoff zone."
+      - name: payment_type_label
+        description: "Human-readable payment type."
+      - name: rate_code_label
+        description: "Human-readable rate code."
