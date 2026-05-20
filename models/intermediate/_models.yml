@@ -55,8 +55,9 @@ models:
         description: "True if pickup or dropoff zone is in the Airports service zone."
       - name: is_cash_tip_unobservable
         description: >
-          True when payment_type != 1 (not credit card), meaning
-          tip_amount is unobserved. {{ doc('caveat__cash_tip_invisibility') }}
+          True for payment types where tips aren't digitally captured —
+          payment_type in (2,3,4,5,6). False for credit card (1) and
+          app-hailed Flex Fare (0). {{ doc('caveat__cash_tip_invisibility') }}
       - name: pickup_borough
         description: "Borough of the pickup zone."
       - name: pickup_zone_name

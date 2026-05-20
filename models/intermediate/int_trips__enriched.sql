@@ -89,9 +89,15 @@ enriched as (
             else false
         end as is_airport_trip,
 
-        -- derived: cash tip unobservable flag
+        -- derived: cash-tip unobservable flag.
+        -- Tip observability is a property of the payment rail, not the row.
+        -- Credit card (1) and app-hailed Flex Fare (0) both capture tips
+        -- digitally — INCLUDING genuine zero tips — so both are observable.
+        -- Cash (2) is never metered; no-charge (3), dispute (4), unknown (5),
+        -- and voided (6) are non-standard settlements where a tip is not
+        -- meaningfully recorded. Those are the unobservable set.
         case
-            when t.payment_type != 1 then true
+            when t.payment_type in (2, 3, 4, 5, 6) then true
             else false
         end as is_cash_tip_unobservable
 

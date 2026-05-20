@@ -76,8 +76,9 @@ models:
         description: "Time-and-distance fare."
       - name: tip_amount_usd
         description: >
-          Tip amount. Only populated for credit card (payment_type=1).
-          {{ doc('caveat__cash_tip_invisibility') }}
+          Tip amount. Digitally captured for credit card (1) and
+          app-hailed Flex Fare (0); unobserved for cash and other
+          settlements. {{ doc('caveat__cash_tip_invisibility') }}
       - name: total_amount_usd
         description: "Total charged to passenger (excludes cash tips)."
       - name: tip_pct_of_fare
@@ -88,7 +89,9 @@ models:
         description: "True if pickup or dropoff is in an Airports service zone."
       - name: is_cash_tip_unobservable
         description: >
-          True for non-credit-card trips where tip is unobserved.
+          True for payment types where tips are not digitally captured —
+          cash (2), no-charge (3), dispute (4), unknown (5), voided (6).
+          False for credit card (1) and app-hailed Flex Fare (0).
           {{ doc('caveat__cash_tip_invisibility') }}
       - name: pickup_borough
         description: "Borough of pickup zone."
@@ -139,6 +142,10 @@ models:
         data_tests:
           - unique
           - not_null
+          # Enumerable dimension — fail if a zone id not in dim_zone appears.
+          - relationships:
+              to: ref('dim_zone')
+              field: location_id
       - name: pickup_borough
         description: "Borough of the pickup zone."
       - name: pickup_zone_name
@@ -162,6 +169,12 @@ models:
         data_tests:
           - unique
           - not_null
+          # Catch a new payment code appearing in a future month: the
+          # aggregate only returned 5 rows for Q1 2026 (codes 5/6 absent),
+          # so an unseen code would otherwise slip through unnoticed.
+          - relationships:
+              to: ref('payment_types')
+              field: payment_type_code
       - name: payment_type_label
         description: "Human-readable payment type."
       - name: trip_count
@@ -172,7 +185,8 @@ models:
         description: "Average fare amount."
       - name: avg_tip_usd
         description: >
-          Average tip. Meaningful only for credit card (payment_type=1).
+          Average tip. Meaningful only for observed-tip types — credit
+          card (1) and Flex Fare (0); ~0 for cash by construction.
           {{ doc('caveat__cash_tip_invisibility') }}
       - name: avg_tip_pct
         description: >
@@ -184,10 +198,12 @@ models:
 
   - name: fct_tip_rate_by_time
     description: >
-      Grain: (day_of_week, hour_of_day). Credit-card-only tip-rate
-      heatmap data. Filtered to payment_type=1 because cash tips are
-      unobserved. Carries trip_count for confidence weighting.
-      {{ doc('caveat__cash_tip_invisibility') }}
+      Grain: (day_of_week, hour_of_day). Tip-rate heatmap data over the
+      OBSERVED-tip population — credit card (1) + app-hailed Flex Fare (0),
+      i.e. `not is_cash_tip_unobservable`. Carries a credit-card-only slice
+      (cc_*) so the dashboard can toggle between "all observed" and
+      "credit card only" without a second mart, plus trip_count for
+      confidence weighting. {{ doc('caveat__cash_tip_invisibility') }}
     columns:
       - name: day_of_week
         description: "Day of week name."
@@ -196,12 +212,18 @@ models:
       - name: hour_of_day
         description: "Hour of day (0–23)."
       - name: trip_count
-        description: "Number of credit-card trips in this time slot. Use for confidence weighting."
+        description: "Observed-tip trips (card + app-pay) in this slot. Use for confidence weighting."
       - name: avg_tip_pct
         description: >
-          Average tip as % of fare for credit-card trips.
+          Average tip as % of fare over observed-tip trips (card + app-pay).
           {{ doc('caveat__cash_tip_invisibility') }}
       - name: avg_tip_usd
-        description: "Average tip amount (credit card only)."
+        description: "Average tip amount over observed-tip trips."
       - name: avg_fare_usd
-        description: "Average fare amount (credit card only)."
+        description: "Average fare amount over observed-tip trips."
+      - name: cc_trip_count
+        description: "Credit-card-only trips (payment_type=1) in this slot."
+      - name: cc_avg_tip_pct
+        description: >
+          Average tip as % of fare, credit-card only (payment_type=1).
+          {{ doc('caveat__cash_tip_invisibility') }}

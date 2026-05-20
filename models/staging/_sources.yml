@@ -46,8 +46,10 @@ sources:
           - name: payment_type
             description: >
               Numeric code: 0=Flex Fare, 1=Credit card, 2=Cash, 3=No charge,
-              4=Dispute, 5=Unknown, 6=Voided trip. tip_amount is only populated
-              for code 1 (credit card) — cash tips are NOT captured.
+              4=Dispute, 5=Unknown, 6=Voided trip. Tips are digitally captured
+              for credit card (1) and app-hailed Flex Fare (0); cash (2) tips
+              are NOT captured. (The legacy TLC dictionary says credit-card-only,
+              but Q1 2026 data shows ~266k observed Flex Fare tips.)
           - name: fare_amount
             description: "Time-and-distance fare calculated by the meter."
           - name: extra
@@ -56,8 +58,8 @@ sources:
             description: "$0.50 MTA tax automatically triggered based on metered rate."
           - name: tip_amount
             description: >
-              Tip amount. Populated automatically for credit-card tips ONLY.
-              Cash tips appear as 0.00 — they are not zero in reality, they are
+              Tip amount. Digitally captured for credit card (1) and app-hailed
+              Flex Fare (0). Cash tips appear as 0.00 — not zero in reality, but
               unobserved. Any aggregate over this column must caveat that.
           - name: tolls_amount
             description: "Total tolls paid during the trip."

@@ -71,8 +71,8 @@ models:
         description: "$0.50 MTA tax triggered by the metered rate."
       - name: tip_amount_usd
         description: >
-          Tip amount. Populated only for credit-card tips (payment_type=1).
-          Cash tips appear as 0.00 — unobserved, not zero.
+          Tip amount. Digitally captured for credit card (1) and app-hailed
+          Flex Fare (0); cash tips are unobserved and appear as 0.00.
           {{ doc('caveat__cash_tip_invisibility') }}
       - name: tolls_amount_usd
         description: "Total tolls paid during the trip."

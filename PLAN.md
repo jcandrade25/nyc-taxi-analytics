@@ -40,7 +40,8 @@ Cloud reading committed parquet mart snapshots (no dbt at runtime).
 **Requirement coverage** — (1) Trip Volume Over Time with day/week/hour
 grain ✓; (2) Revenue by Pickup Zone with revenue/avg-fare/trip-count +
 filter & sort ✓; (3) Payment Type Analysis ✓; (4) candidate viz =
-credit-card-only tip-rate heatmap ✓; bronze/silver/gold dbt project ✓;
+observed-tip tip-rate heatmap (card + app-pay, with a credit-card-only
+toggle) ✓; bronze/silver/gold dbt project ✓;
 DQ tests + documentation ✓; Streamlit on gold marts ✓.
 
 **Run it** — see [README.md](README.md) for the local quickstart and the
@@ -169,10 +170,13 @@ models/marts/                  ← GOLD
    fct_revenue_by_pickup_zone      grain: (pickup_zone) — viz #2
    fct_payment_type_behavior       grain: (payment_type) — viz #3
    fct_tip_rate_by_time            grain: (day_of_week, hour_of_day)
-                                     — viz #4. Credit card only
-                                     (payment_type = 1). Carries
-                                     trip_count for confidence
-                                     weighting on the heatmap.
+                                     — viz #4. Observed-tip population
+                                     (NOT is_cash_tip_unobservable =
+                                     payment_type in (0,1): credit card
+                                     + app-hailed Flex Fare). Carries a
+                                     credit-card-only slice (cc_*) for a
+                                     dashboard toggle, and trip_count for
+                                     confidence weighting on the heatmap.
 ```
 
 ### Layer responsibilities (and what does NOT belong)
@@ -431,7 +435,8 @@ the way are recorded in §11.
    `fct_trips_by_time` (hour grain with date/week/dow/weekend
    carried), `fct_revenue_by_pickup_zone`,
    `fct_payment_type_behavior`, `fct_tip_rate_by_time`
-   (payment_type = 1 only, carries trip_count). Aggregates explicitly
+   (observed-tip population `not is_cash_tip_unobservable`, carries a
+   credit-card-only slice + trip_count). Aggregates explicitly
    cast to `DECIMAL(18,2)`.
 6. **Singular tests** in `tests/`, including
    `assert_store_and_fwd_dedupe.sql` pointed at `int_trips__cleansed`.
@@ -556,6 +561,31 @@ reason.
    config.toml` + an in-app theme matching metacto.com (teal-navy `#0F2028`
    background, orange `#F18700` accent, Barlow + Inter, pill tabs, KPI
    cards, branded Plotly template). No data-model changes.
+
+8. **Tip observability corrected for Flex Fare** (post-review). The
+   original `is_cash_tip_unobservable = payment_type != 1` wrongly treated
+   all ~3.06M Flex Fare (code 0) rows as unobservable, discarding ~266k
+   real digitally-captured tips, and `fct_tip_rate_by_time` filtered to
+   `payment_type = 1`. Corrected to `payment_type in (2,3,4,5,6)`:
+   observability is a property of the payment rail, and credit card (1)
+   and app-hailed Flex Fare (0) both capture tips digitally (including
+   genuine zeros). Chose this over a per-row `tip > 0 OR cc` rule, which
+   would condition on tipping and bias the *rate* upward. The flag is now
+   consumed by `fct_tip_rate_by_time` (`not is_cash_tip_unobservable`),
+   which also carries a credit-card-only slice powering a dashboard toggle
+   — so the flag is wired in, not orphaned.
+
+9. **Relationships tests on aggregate marts** (post-review). Added
+   `relationships` from `fct_payment_type_behavior.payment_type` →
+   `payment_types.payment_type_code` and `fct_revenue_by_pickup_zone.
+   pickup_location_id` → `dim_zone.location_id`, so a new payment code or
+   zone id appearing in a future month fails a test instead of slipping
+   through (Q1 2026 only exercised 5 of 7 payment codes).
+
+10. **Trip-weighted KPIs** (post-review). The dashboard "Avg Distance"
+    and "Avg Duration" KPIs averaged the per-hour averages; switched to
+    trip-count-weighted means. Also migrated `use_container_width` to
+    `width="stretch"`.
 
 **Known minor issues.** (a) Plotly charts inside `st.tabs` can first-paint
 with zero width (a Streamlit quirk); any resize/interaction forces the

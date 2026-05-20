@@ -1,27 +1,46 @@
 {% docs caveat__cash_tip_invisibility %}
 
-**Cash tips are not captured in this dataset.** Per the TLC data
-dictionary, `tip_amount` is populated automatically only for
-credit-card transactions (`payment_type = 1`). Cash tips appear in
-the data as `0.00` — not because riders tipped zero, but because the
-meter never observed the tip.
+**Tips are observed only when the payment rail captures them
+digitally.** Tip observability is a property of *how* the fare was
+settled, not of the individual trip:
+
+- **Observed** — credit card (`payment_type = 1`) and app-hailed
+  **Flex Fare** (`payment_type = 0`). Both record the tip digitally,
+  *including* genuine `0.00` tips (a rider who chose not to tip).
+- **Unobserved** — cash (`2`) is never metered: a cash tip shows as
+  `0.00` but the meter simply never saw it. No-charge (`3`),
+  dispute (`4`), unknown (`5`), and voided (`6`) are non-standard
+  settlements where a tip is not meaningfully recorded.
+
+The `is_cash_tip_unobservable` flag encodes exactly this:
+`payment_type in (2, 3, 4, 5, 6)`.
+
+**Why Flex Fare is observed, not excluded.** Flex Fare is ~28% of the
+dataset and ~266k of those trips carry real, digitally-captured tips.
+An earlier version of this pipeline treated everything except credit
+card as unobservable and the heatmap filtered to `payment_type = 1`,
+silently discarding a quarter-million legitimate observations. Flex
+Fare's genuine tip rate (~9%, far below credit card's ~90%) is
+*signal* about app-hailed rider behavior, not noise to be hidden.
 
 **Implications for analysis:**
 
-- Any tip aggregation that includes non-credit-card trips
-  systematically understates true tipping behavior.
-- Cross-payment-type tip comparisons should treat cash-tip values as
-  unobserved, not as zero.
-- The tip-rate heatmap (`fct_tip_rate_by_time`) filters to
-  `payment_type = 1` for this reason. The dashboard chart carries an
-  in-chart caveat for the same reason.
-- Average tip percent computed naively across all payment types will
-  fall as the cash-share of trips rises, even if tipping behavior
-  among credit-card users is constant.
+- Any tip aggregation that includes **cash** (or no-charge / dispute /
+  unknown / voided) systematically understates true tipping.
+- A tip *rate* must include observed zero tips. Conditioning on
+  `tip_amount > 0` (e.g. "include any row that has a tip") measures
+  tip size *among tippers*, not the tip rate, and biases the average
+  upward — so we partition by payment rail, not by whether a tip
+  occurred.
+- The tip-rate heatmap (`fct_tip_rate_by_time`) is built over the
+  observed population (`not is_cash_tip_unobservable`) and carries a
+  credit-card-only slice so the dashboard can toggle between the two.
+- Average tip percent computed naively across *all* payment types
+  still falls as the cash share rises, even if behavior is constant.
 
-This is a property of the upstream source, not a pipeline bug. There
-is no fix without external data; the only honest response is
-disclosure, which is what this doc block exists to do.
+This is a property of the upstream source, not a pipeline bug. The
+honest response is to scope tip analysis to the observed population
+and disclose it — which is what this doc block exists to do.
 
 {% enddocs %}
 
