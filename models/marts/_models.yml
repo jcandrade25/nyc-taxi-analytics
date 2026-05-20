@@ -1,0 +1,207 @@
+version: 2
+
+models:
+  - name: dim_zone
+    description: >
+      Clean zone dimension with a surrogate key. One row per TLC Taxi
+      Zone (265 rows).
+    columns:
+      - name: zone_key
+        description: "Surrogate key derived from location_id."
+        data_tests:
+          - unique
+          - not_null
+      - name: location_id
+        description: "TLC Taxi Zone ID."
+        data_tests:
+          - unique
+          - not_null
+      - name: borough
+        description: "NYC borough (Manhattan, Brooklyn, Queens, Bronx, Staten Island, EWR, Unknown)."
+      - name: zone_name
+        description: "Human-readable neighborhood / zone name."
+      - name: service_zone
+        description: "Yellow/Green/Boro/Airports service designation."
+
+  - name: dim_date
+    description: >
+      Date spine covering Jan 1 – Mar 31 2026. One row per calendar day.
+    columns:
+      - name: date_day
+        description: "Calendar date."
+        data_tests:
+          - unique
+          - not_null
+      - name: year
+        description: "4-digit year."
+      - name: month
+        description: "Month number (1–12)."
+      - name: day_of_month
+        description: "Day of the month (1–31)."
+      - name: day_of_week_num
+        description: "Day of week as integer (0=Sunday, 6=Saturday)."
+      - name: day_of_week_name
+        description: "Day of week name (Monday, Tuesday, etc.)."
+      - name: iso_week
+        description: "ISO week number."
+      - name: is_weekend
+        description: "True for Saturday and Sunday."
+
+  - name: fct_trips
+    description: >
+      Grain: one row per trip. The parent fact table consumed by the
+      four aggregated marts. Excludes suspect rows flagged by the
+      cleansing layer. All monetary columns are DECIMAL(10,2).
+    columns:
+      - name: trip_surrogate_id
+        description: "Surrogate key: hash of vendor_id + pickup/dropoff datetime + pickup/dropoff location."
+        data_tests:
+          - unique
+          - not_null
+      - name: vendor_id
+        description: "TPEP provider. 1=Creative Mobile Technologies, 2=Verifone, 6=Myle, 7=Helix."
+      - name: pickup_datetime
+        description: "Meter engaged timestamp (NYC local)."
+      - name: dropoff_datetime
+        description: "Meter disengaged timestamp (NYC local)."
+      - name: passenger_count
+        description: "Driver-entered passenger count."
+      - name: trip_distance_miles
+        description: "Taximeter distance in miles."
+      - name: payment_type
+        description: "TLC payment-type code."
+      - name: payment_type_label
+        description: "Human-readable payment type."
+      - name: fare_amount_usd
+        description: "Time-and-distance fare."
+      - name: tip_amount_usd
+        description: >
+          Tip amount. Only populated for credit card (payment_type=1).
+          {{ doc('caveat__cash_tip_invisibility') }}
+      - name: total_amount_usd
+        description: "Total charged to passenger (excludes cash tips)."
+      - name: tip_pct_of_fare
+        description: >
+          Tip as % of fare. Null when fare is zero.
+          {{ doc('caveat__cash_tip_invisibility') }}
+      - name: is_airport_trip
+        description: "True if pickup or dropoff is in an Airports service zone."
+      - name: is_cash_tip_unobservable
+        description: >
+          True for non-credit-card trips where tip is unobserved.
+          {{ doc('caveat__cash_tip_invisibility') }}
+      - name: pickup_borough
+        description: "Borough of pickup zone."
+      - name: pickup_zone_name
+        description: "Neighborhood name of pickup zone."
+      - name: dropoff_borough
+        description: "Borough of dropoff zone."
+      - name: dropoff_zone_name
+        description: "Neighborhood name of dropoff zone."
+      - name: pickup_location_id
+        description: "FK to dim_zone.location_id."
+        data_tests:
+          - relationships:
+              to: ref('dim_zone')
+              field: location_id
+
+  - name: fct_trips_by_time
+    description: >
+      Grain: (pickup_date, pickup_hour). Trip volume and revenue
+      aggregated at the hour level, carrying date/week/day-of-week/
+      is_weekend so Streamlit can pick the GROUP BY at query time
+      (day, week, or hour view from a single mart).
+    columns:
+      - name: pickup_date
+        description: "Calendar date of pickup."
+      - name: pickup_hour
+        description: "Hour of day (0–23)."
+      - name: iso_week
+        description: "ISO week number."
+      - name: day_of_week
+        description: "Day of week name."
+      - name: is_weekend
+        description: "True for Saturday and Sunday."
+      - name: trip_count
+        description: "Number of trips in this hour."
+      - name: total_revenue_usd
+        description: "Sum of total_amount_usd. DECIMAL(18,2)."
+      - name: avg_trip_distance_miles
+        description: "Average trip distance in this time bucket."
+
+  - name: fct_revenue_by_pickup_zone
+    description: >
+      Grain: pickup_location_id. Revenue and trip metrics aggregated
+      per pickup zone. Powers the top-performing zones chart.
+    columns:
+      - name: pickup_location_id
+        description: "TLC Taxi Zone ID. FK to dim_zone."
+        data_tests:
+          - unique
+          - not_null
+      - name: pickup_borough
+        description: "Borough of the pickup zone."
+      - name: pickup_zone_name
+        description: "Neighborhood name of the pickup zone."
+      - name: trip_count
+        description: "Total trips from this zone."
+      - name: total_revenue_usd
+        description: "Sum of total_amount_usd. DECIMAL(18,2)."
+      - name: avg_fare_usd
+        description: "Average fare amount."
+      - name: total_tips_usd
+        description: "Sum of tip_amount_usd (credit-card only observed)."
+
+  - name: fct_payment_type_behavior
+    description: >
+      Grain: payment_type. Rider behavior metrics aggregated per
+      payment method. Powers the payment type analysis chart.
+    columns:
+      - name: payment_type
+        description: "TLC payment-type code."
+        data_tests:
+          - unique
+          - not_null
+      - name: payment_type_label
+        description: "Human-readable payment type."
+      - name: trip_count
+        description: "Total trips with this payment method."
+      - name: total_revenue_usd
+        description: "Sum of total_amount_usd. DECIMAL(18,2)."
+      - name: avg_fare_usd
+        description: "Average fare amount."
+      - name: avg_tip_usd
+        description: >
+          Average tip. Meaningful only for credit card (payment_type=1).
+          {{ doc('caveat__cash_tip_invisibility') }}
+      - name: avg_tip_pct
+        description: >
+          Average tip as % of fare. {{ doc('caveat__cash_tip_invisibility') }}
+      - name: avg_trip_distance_miles
+        description: "Average trip distance."
+      - name: avg_trip_duration_minutes
+        description: "Average trip duration."
+
+  - name: fct_tip_rate_by_time
+    description: >
+      Grain: (day_of_week, hour_of_day). Credit-card-only tip-rate
+      heatmap data. Filtered to payment_type=1 because cash tips are
+      unobserved. Carries trip_count for confidence weighting.
+      {{ doc('caveat__cash_tip_invisibility') }}
+    columns:
+      - name: day_of_week
+        description: "Day of week name."
+      - name: day_of_week_num
+        description: "Day of week number (0=Sunday, 6=Saturday)."
+      - name: hour_of_day
+        description: "Hour of day (0–23)."
+      - name: trip_count
+        description: "Number of credit-card trips in this time slot. Use for confidence weighting."
+      - name: avg_tip_pct
+        description: >
+          Average tip as % of fare for credit-card trips.
+          {{ doc('caveat__cash_tip_invisibility') }}
+      - name: avg_tip_usd
+        description: "Average tip amount (credit card only)."
+      - name: avg_fare_usd
+        description: "Average fare amount (credit card only)."
