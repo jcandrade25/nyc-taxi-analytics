@@ -1,0 +1,33 @@
+version: 2
+
+seeds:
+  - name: payment_types
+    description: >
+      TLC payment-type code-to-label mapping. One row per payment_type code
+      (0–6). Source: NYC TLC data dictionary. Treated as static reference
+      data; updated only when TLC publishes new codes.
+    columns:
+      - name: payment_type_code
+        description: "Integer code assigned by TLC to each payment method."
+        data_tests:
+          - unique
+          - not_null
+      - name: payment_type_label
+        description: "Human-readable label for the payment type."
+        data_tests:
+          - not_null
+
+  - name: rate_codes
+    description: >
+      TLC rate-code-to-label mapping. One row per RatecodeID (1–6, 99).
+      Source: NYC TLC data dictionary. 99 = unknown/missing.
+    columns:
+      - name: rate_code_id
+        description: "Integer code assigned by TLC to each rate type."
+        data_tests:
+          - unique
+          - not_null
+      - name: rate_code_label
+        description: "Human-readable label for the rate code."
+        data_tests:
+          - not_null
