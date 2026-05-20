@@ -10,10 +10,10 @@ the implementation notes (where the build refined the original plan).
 
 ## 0. Status & delivery summary
 
-**Status: complete and deploy-ready.** Full `dbt build` is green
+**Status: complete and deployed.** Full `dbt build` is green
 (**59 pass, 4 intentional warns, 0 errors**); the Streamlit dashboard
-renders all four required views; the app self-initializes on Streamlit
-Community Cloud.
+renders all four required views and is deployed on Streamlit Community
+Cloud reading committed parquet mart snapshots (no dbt at runtime).
 
 **What was built**
 
@@ -34,7 +34,8 @@ Community Cloud.
 - **Docs** — model/column descriptions, two caveat doc blocks, and a
   Streamlit `exposure` terminating the lineage.
 - **Dashboard** — `app/streamlit_app.py`, MetaCTO-themed, four Plotly
-  views, `@st.cache_data`, read-only DuckDB, self-initializing bootstrap.
+  views, `@st.cache_data`. Reads the read-only `dev.duckdb` warehouse
+  locally, or the committed `app/data/*.parquet` mart snapshots on Cloud.
 
 **Requirement coverage** — (1) Trip Volume Over Time with day/week/hour
 grain ✓; (2) Revenue by Pickup Zone with revenue/avg-fare/trip-count +
@@ -533,15 +534,23 @@ reason.
 4. **Dashboard reads `main_marts.*`.** dbt-duckdb materializes custom
    schemas as `main_<schema>`; the app queries the actual schema names.
 
-5. **Self-initializing deploy.** `app/streamlit_app.py` runs `dbt deps` +
-   `dbt build` on first boot if `dev.duckdb` is absent (it's gitignored, so
-   it won't exist on a fresh Streamlit Cloud clone). It generates
-   `profiles.yml` from the committed example first. The raw parquet/CSV are
-   committed so Cloud can build with no manual setup.
+5. **Deploy reads committed marts, not a runtime dbt build.** The first
+   attempt had the app run `dbt deps` + `dbt build` on boot, but on the
+   Streamlit Community Cloud free tier that hit two walls: dbt-core 1.9
+   can't import on the Cloud-default Python 3.14, and even on 3.12 the
+   ~11M-row build exceeded the ~1 GB RAM ceiling. Final design: the four
+   dashboard marts are exported to committed `app/data/*.parquet`
+   snapshots (via `export_marts.py`), and `app/streamlit_app.py` reads the
+   `dev.duckdb` warehouse locally or those parquet files on Cloud. No dbt,
+   no build, no memory spike at runtime. Charts still show all three
+   months; only the heavy intermediate tables (which no chart reads) are
+   omitted from the snapshot.
 
-6. **Environment: Python 3.12.** dbt-core 1.9 / mashumaro fail to import on
-   Python 3.13/3.14. Local build and the Cloud deploy use Python 3.12;
-   pinned in `requirements.txt` and the README deploy steps.
+6. **Split requirements.** `requirements.txt` is the dashboard runtime only
+   (Streamlit/Plotly/pandas/DuckDB) so the Cloud deploy has no dbt import
+   constraint; `requirements-dev.txt` adds dbt-core/dbt-duckdb for local
+   builds. dbt still requires Python 3.12 locally (mashumaro breaks on
+   3.13/3.14), but the deployed app does not.
 
 7. **MetaCTO brand theme** (added after the core build). `.streamlit/
    config.toml` + an in-app theme matching metacto.com (teal-navy `#0F2028`
@@ -560,9 +569,10 @@ hundred rows out of ~10.8M — expected, not a defect.
 
 - **Warehouse size.** The full three-month build materializes ~40M rows
   across the silver/gold tables; `dev.duckdb` reaches ~2 GB and the build
-  takes ~50 s locally. On Streamlit Community Cloud's free tier (~1 GB RAM)
-  the first-boot build may be slow or OOM; the README documents a
-  one-month fallback via the `TAXI_PARQUET_GLOB` var.
+  takes ~50 s locally. This is why the Cloud deploy reads the small
+  committed mart snapshots (~2,600 rows total) instead of building the
+  warehouse — see §11 #5. Regenerate the snapshots with `dbt build` then
+  `python export_marts.py` after model changes.
 - **Source of truth.** This file (design + as-built) plus the README
   (run/deploy) are the two docs to read. `CLAUDE.md` holds project rules;
   `prompts.txt` is the chronological prompt log.

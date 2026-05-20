@@ -51,18 +51,19 @@ The four dashboard visualizations:
 
 ## Quickstart
 
-Prereqs: Python 3.10–3.12 (dbt-core 1.9 does not yet support 3.13/3.14),
-git, ~200 MB of disk for the warehouse file once built.
+Prereqs: Python 3.10–3.12 for the full dbt build (dbt-core 1.9 does not
+yet support 3.13/3.14), git, ~2 GB of disk for the warehouse file once
+built.
 
 ```bash
 # 1. clone
 git clone https://github.com/jcandrade25/nyc-taxi-analytics.git
 cd nyc-taxi-analytics
 
-# 2. virtualenv + deps
+# 2. virtualenv + dev deps (dashboard + dbt)
 python -m venv .venv
 source .venv/bin/activate         # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
+pip install -r requirements-dev.txt
 
 # 3. dbt profile (gitignored — copy the example)
 cp profiles.yml.example profiles.yml
@@ -82,33 +83,45 @@ The full build takes ~50 s on a laptop. After it completes,
 plus `fct_trips` each hold ~11M rows); the Streamlit app opens it
 read-only.
 
+> **Just want the dashboard?** Install the lighter `requirements.txt`
+> (no dbt) and run `streamlit run app/streamlit_app.py`. With no
+> `dev.duckdb` present, the app reads the committed mart snapshots in
+> `app/data/` — the same way the Cloud deploy works.
+
 ---
 
 ## Deploy to Streamlit Community Cloud
 
-The app **self-initializes**: `app/streamlit_app.py` checks for
-`dev.duckdb` on startup and, if it's missing (as on a fresh Cloud
-deploy), runs `dbt deps` + `dbt build` via subprocess before loading the
-dashboard. The raw parquet/CSV sources are committed to the repo, so no
-manual setup is needed.
+The deployed app does **not** run dbt or build a warehouse at runtime —
+that would exceed the free tier's memory. Instead it reads the four
+dashboard marts from committed parquet snapshots in `app/data/`
+(generated locally by `python export_marts.py` after a `dbt build`). The
+charts still show the full three-month dataset; only the heavy ~11M-row
+intermediate tables are left out, since no chart needs them.
 
 To deploy:
 
 1. Push this repo to GitHub (public).
 2. On [share.streamlit.io](https://share.streamlit.io), create an app from
    the repo with **Main file path** = `app/streamlit_app.py`.
-3. In **Advanced settings**, set **Python version = 3.12** (dbt-core 1.9
-   does not import on 3.13/3.14).
-4. Deploy. The first boot runs the dbt build (~1–2 min behind a status
-   panel); subsequent boots reuse the warehouse.
+3. Deploy. Boot is near-instant — Cloud installs the lightweight
+   `requirements.txt` (Streamlit/Plotly/pandas/DuckDB; no dbt) and the
+   app reads the parquet marts directly. Python 3.12 is recommended (it's
+   what the pins are verified against), but there's no dbt import
+   constraint at runtime.
 
-> **Resource note.** The full dataset materializes ~40M rows across the
-> silver/gold tables and the warehouse file reaches ~2 GB. Streamlit
-> Community Cloud's free tier (~1 GB RAM) may struggle with the
-> first-boot build. If the build OOMs or times out, the cheapest fix is
-> to load **one month** instead of three — set the `TAXI_PARQUET_GLOB`
-> env var (or edit `parquet_glob` in `dbt_project.yml`) to a single
-> file. The pipeline is identical; only the row count changes.
+### Refreshing the deployed data
+
+The committed marts are a point-in-time snapshot. To update them after
+changing models:
+
+```bash
+dbt build              # rebuild dev.duckdb (needs requirements-dev.txt)
+python export_marts.py # re-export app/data/*.parquet
+git commit -am "chore: refresh mart snapshots" && git push
+```
+
+Streamlit Cloud redeploys on push.
 
 ---
 
@@ -138,11 +151,14 @@ appear.
 ├── dbt_project.yml          dbt config + per-layer materialization defaults
 ├── packages.yml             dbt_utils, dbt_expectations (via git URLs)
 ├── profiles.yml.example     template for the local DuckDB profile
-├── requirements.txt         Python deps (dbt-duckdb, streamlit, plotly, …)
+├── requirements.txt         dashboard runtime deps (Streamlit Cloud; no dbt)
+├── requirements-dev.txt     runtime + dbt-core/dbt-duckdb for local builds
+├── export_marts.py          re-export app/data/*.parquet from dev.duckdb
 ├── prompts.txt              chronological log of every prompt + response
 ├── resources/               raw TLC data (parquet) + zone lookup + dictionary
 ├── app/
-│   └── streamlit_app.py     MetaCTO-themed dashboard (self-initializing)
+│   ├── streamlit_app.py     MetaCTO-themed dashboard (warehouse or parquet)
+│   └── data/                committed mart snapshots the Cloud app reads
 ├── .streamlit/
 │   └── config.toml          Streamlit theme config
 ├── models/
