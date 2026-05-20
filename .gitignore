@@ -1,0 +1,30 @@
+# dbt build artifacts
+target/
+dbt_packages/
+logs/
+.user.yml
+
+# Local dbt profile — copy from profiles.yml.example after clone.
+# Gitignored so any credential added during local dev cannot leak.
+profiles.yml
+
+# Local DuckDB warehouse(s) — never commit warehouse files
+*.duckdb
+*.duckdb.wal
+*.duckdb.tmp/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+
+# Streamlit
+.streamlit/secrets.toml
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.swp

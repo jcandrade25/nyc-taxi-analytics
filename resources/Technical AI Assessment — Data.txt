@@ -1,0 +1,69 @@
+﻿Technical AI Assessment
+Role: Senior Data Engineer (dbt, Snowflake, Streamlit)
+Overview
+This assessment evaluates your ability to ingest, model, test, document, and visualize data using a modern analytics engineering workflow.
+We want to understand how you think about data pipelines, data quality, modeling trade-offs, and the progression from raw data to trusted business-facing outputs.
+We also want to see how you work with AI tools,  not just whether the final code runs.
+Setup Instructions
+1. Create a Public Git Repository
+2. Set Up Your Development Environment
+3. Configure Claude Code (or your AI tool of choice):
+   1. Before writing any code, open Claude Code in your project root and use the following as your first prompt:
+
+
+Create a CLAUDE.md file in the project root with the following instruction:
+# Project Rules
+## Prompt Logging
+Every time you receive a new instruction or prompt, append it to prompts.txt in the project root with a timestamp (ISO 8601) and a brief summary of what you did in response. Create the file if it doesn't exist. Keep this log updated throughout all sessions.
+
+This sets up automatic prompt logging so we can see how you collaborated with the AI throughout the session.
+
+
+Public Dataset
+NYC Taxi & Limousine Commission Trip Record Data
+Dataset:
+ https://www.nyc.gov/site/tlc/about/tlc-trip-record-data.page
+You may use:
+* Yellow taxi data only
+* A subset of 1–3 months of data
+* CSV or Parquet format
+You are encouraged to limit the dataset size appropriately for local development and the allotted time.
+Assignment
+Using the assigned NYC Taxi Trips dataset, design and build a small analytics platform that demonstrates how you organize, transform, validate, and present data across modern data engineering layers.
+Your solution should include:
+* A clearly structured dbt project with bronze, silver, and gold models
+* Data quality tests and documentation
+* A Streamlit dashboard powered by your gold-layer models
+The goal of this exercise is not simply to create charts, but to demonstrate your approach to building reliable, maintainable, and business-ready data systems.
+
+
+Core Requirements
+Visualizations
+1. Trip Volume Over Time
+   1. Allow filtering by day/week/hour
+   2. Show trends or peaks in demand
+   3. Clearly define the aggregation grain
+2. Revenue by Pickup Zone
+   1. Show top-performing pickup zones
+   2. Include at least one metric:
+      1. total revenue
+      2. average fare
+      3. trip count
+   3. Support filtering or sorting
+3. Payment Type Analysis
+   1. Visualize how rider behavior differs across payment types.
+4. Additional Visualization (Candidate Choice)
+   1. Add one additional visualization or analytical feature that you believe would provide meaningful business value.
+Expectations
+We specifically want to understand your approach to organizing data across layers
+You are encouraged to extend the system with additional functionality, features, and technical considerations you believe are necessary to make this a production-ready and polished product.
+Submitting Your Work
+The project should take roughly 2-3 hours. Once completed, send the following to:
+andres.saldarriaga@metacto.com 
+1. Push your code to GitHub — make sure the repository is public
+2. Share the repository URL 
+3. Record a ~5 minute Loom video walking through your locally running project:
+   1. Demo the features you built
+   2. Speak to the technical decisions you made
+   3. Explain your approach and any trade-offs
+4. Include the Loom link in your submission

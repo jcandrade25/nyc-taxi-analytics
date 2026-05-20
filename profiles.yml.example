@@ -1,0 +1,41 @@
+# profiles.yml.example — copy to `profiles.yml` to use:
+#
+#   cp profiles.yml.example profiles.yml
+#
+# `profiles.yml` is gitignored. This template is the single source of
+# truth for the profile shape. Update both files when the shape changes.
+#
+# Point dbt at the (copied) profile by either:
+#   1. exporting DBT_PROFILES_DIR=$(pwd) before running dbt, or
+#   2. running `dbt run --profiles-dir .`
+#
+# The `prod_snowflake` target is a placeholder showing how migration
+# would look — all credentials come from env vars so nothing sensitive
+# would ship in git even if profiles.yml itself were committed.
+
+nyc_taxi_analytics:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      # Local file-based DuckDB. Sits next to the project so the
+      # Streamlit app can attach the same file read-only.
+      path: "dev.duckdb"
+      threads: 4
+      # Extensions installed on first run; httpfs is included so we
+      # can later swap parquet_glob to an s3:// path with no code change.
+      extensions:
+        - httpfs
+        - parquet
+
+    prod_snowflake:
+      type: snowflake
+      account: "{{ env_var('SNOWFLAKE_ACCOUNT', '') }}"
+      user: "{{ env_var('SNOWFLAKE_USER', '') }}"
+      password: "{{ env_var('SNOWFLAKE_PASSWORD', '') }}"
+      role: "{{ env_var('SNOWFLAKE_ROLE', 'TRANSFORMER') }}"
+      database: "{{ env_var('SNOWFLAKE_DATABASE', 'NYC_TAXI_ANALYTICS') }}"
+      warehouse: "{{ env_var('SNOWFLAKE_WAREHOUSE', 'TRANSFORMING') }}"
+      schema: "{{ env_var('SNOWFLAKE_SCHEMA', 'DBT_PROD') }}"
+      threads: 8
+      client_session_keep_alive: false

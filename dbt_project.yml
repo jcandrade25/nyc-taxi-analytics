@@ -1,0 +1,59 @@
+name: 'nyc_taxi_analytics'
+version: '0.1.0'
+config-version: 2
+
+# Active profile (resolved from profiles.yml). Local dev = DuckDB; a
+# Snowflake target can be added under the same profile name without
+# touching model SQL because we restrict ourselves to ANSI-leaning
+# constructs (see PLAN.md "Portability rules").
+profile: 'nyc_taxi_analytics'
+
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+
+clean-targets:
+  - "target"
+  - "dbt_packages"
+  - "logs"
+
+# Layered materialization defaults — overridable per model:
+#   staging      → view       (cheap, always-fresh wrapper over source)
+#   intermediate → ephemeral  (compiled inline; no warehouse object)
+#   marts        → table      (materialized for dashboard read performance)
+models:
+  nyc_taxi_analytics:
+    staging:
+      +materialized: view
+      +schema: staging
+    intermediate:
+      +materialized: ephemeral
+      +schema: intermediate
+    marts:
+      +materialized: table
+      +schema: marts
+
+seeds:
+  nyc_taxi_analytics:
+    +schema: seeds
+    # taxi_zone_lookup is loaded via read_csv_auto in the staging
+    # source instead — keeping seeds/ empty for now but ready if we
+    # want to ship a curated lookup with the repo.
+
+# Variables: set a single place to swap which months are loaded. The
+# staging sources reference these via {{ var('parquet_glob') }} so
+# adding April just means editing this list.
+vars:
+  parquet_glob: "{{ env_var('TAXI_PARQUET_GLOB', '../resources/yellow_tripdata_2026-*.parquet') }}"
+  zone_lookup_path: "{{ env_var('TAXI_ZONE_LOOKUP', '../resources/taxi_zone_lookup.csv') }}"
+  # Trip filters used by intermediate cleansing model — exposed as
+  # vars so analysts can widen/tighten without editing SQL.
+  min_trip_distance_miles: 0
+  max_trip_distance_miles: 100
+  min_fare_amount_usd: 0
+  max_fare_amount_usd: 1000
+  min_passenger_count: 0
+  max_passenger_count: 8
