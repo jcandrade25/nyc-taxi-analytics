@@ -1,0 +1,139 @@
+version: 2
+
+models:
+  - name: stg_tlc__trips
+    description: >
+      Typed view over the raw TLC yellow-taxi trip records. Renames
+      CamelCase columns to snake_case, casts monetary fields to
+      DECIMAL(10,2) and timestamps to TIMESTAMP. No row drops, no joins,
+      no business logic. Timestamps are NYC local time.
+    columns:
+      - name: vendor_id
+        description: "TPEP provider. 1=Creative Mobile Technologies, 2=Verifone, 6=Myle, 7=Helix."
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: [1, 2, 6, 7]
+      - name: pickup_datetime
+        description: "Meter engaged timestamp (NYC local time)."
+        data_tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: "'2026-01-01'::timestamp"
+              max_value: "'2026-04-01'::timestamp"
+              row_condition: "pickup_datetime is not null"
+              strictly: false
+              config:
+                severity: warn
+      - name: dropoff_datetime
+        description: "Meter disengaged timestamp (NYC local time)."
+        data_tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: "'2026-01-01'::timestamp"
+              max_value: "'2026-04-01'::timestamp"
+              row_condition: "dropoff_datetime is not null"
+              strictly: false
+              config:
+                severity: warn
+      - name: passenger_count
+        description: "Driver-entered passenger count. Self-reported; nulls and zeros occur."
+      - name: trip_distance_miles
+        description: "Elapsed trip distance in miles from the taximeter."
+      - name: rate_code_id
+        description: "Rate code at trip end. 1=Standard, 2=JFK, 3=Newark, 4=Nassau/Westchester, 5=Negotiated, 6=Group ride, 99=Unknown."
+        data_tests:
+          - accepted_values:
+              values: [1, 2, 3, 4, 5, 6, 99]
+      - name: store_and_fwd_flag
+        description: "Y=record held in vehicle memory before sending; N=sent immediately."
+        data_tests:
+          - accepted_values:
+              values: ['Y', 'N']
+      - name: pickup_location_id
+        description: "TLC Taxi Zone of pickup. FK to taxi_zone_lookup.LocationID."
+        data_tests:
+          - not_null
+      - name: dropoff_location_id
+        description: "TLC Taxi Zone of drop-off. FK to taxi_zone_lookup.LocationID."
+        data_tests:
+          - not_null
+      - name: payment_type
+        description: "Payment method code. 0=Flex Fare, 1=Credit card, 2=Cash, 3=No charge, 4=Dispute, 5=Unknown, 6=Voided trip."
+        data_tests:
+          - accepted_values:
+              values: [0, 1, 2, 3, 4, 5, 6]
+      - name: fare_amount_usd
+        description: "Time-and-distance fare calculated by the meter."
+      - name: extra_usd
+        description: "Miscellaneous extras and surcharges (rush-hour, overnight)."
+      - name: mta_tax_usd
+        description: "$0.50 MTA tax triggered by the metered rate."
+      - name: tip_amount_usd
+        description: >
+          Tip amount. Populated only for credit-card tips (payment_type=1).
+          Cash tips appear as 0.00 — unobserved, not zero.
+          {{ doc('caveat__cash_tip_invisibility') }}
+      - name: tolls_amount_usd
+        description: "Total tolls paid during the trip."
+      - name: improvement_surcharge_usd
+        description: "$0.30 surcharge assessed on hailed trips at flag drop."
+      - name: total_amount_usd
+        description: "Total charged to passenger. Does NOT include cash tips."
+      - name: congestion_surcharge_usd
+        description: "NY State congestion surcharge."
+      - name: airport_fee_usd
+        description: "$1.25 for pickups at LaGuardia and JFK Airports."
+      - name: cbd_congestion_fee_usd
+        description: "Manhattan CBD congestion-pricing fee (added 2025)."
+      - name: source_filename
+        description: "Source parquet file path for partition lineage."
+
+  - name: stg_tlc__zones
+    description: >
+      Typed view over the TLC taxi zone lookup CSV. 265 zones across
+      the five boroughs plus EWR and Unknown.
+    columns:
+      - name: location_id
+        description: "Surrogate ID for a TLC Taxi Zone. PK."
+        data_tests:
+          - unique
+          - not_null
+      - name: borough
+        description: "NYC borough (Manhattan, Brooklyn, Queens, Bronx, Staten Island, EWR, Unknown)."
+        data_tests:
+          - not_null
+      - name: zone_name
+        description: "Human-readable neighborhood / zone name."
+      - name: service_zone
+        description: "Yellow/Green/Boro/Airports service designation."
+
+  - name: stg_tlc__payment_types
+    description: >
+      Typed view over the payment_types seed. Maps TLC payment-type
+      codes (0–6) to human-readable labels.
+    columns:
+      - name: payment_type
+        description: "TLC payment-type integer code."
+        data_tests:
+          - unique
+          - not_null
+      - name: payment_type_label
+        description: "Human-readable payment type label."
+        data_tests:
+          - not_null
+
+  - name: stg_tlc__rate_codes
+    description: >
+      Typed view over the rate_codes seed. Maps TLC rate-code IDs
+      (1–6, 99) to human-readable labels.
+    columns:
+      - name: rate_code_id
+        description: "TLC rate-code integer ID."
+        data_tests:
+          - unique
+          - not_null
+      - name: rate_code_label
+        description: "Human-readable rate code label."
+        data_tests:
+          - not_null
