@@ -6,10 +6,9 @@ trusted, business-facing facts powering a Streamlit dashboard.
 
 Built as the **[MetaCTO Senior Data Engineer technical
 assessment](resources/Technical%20AI%20Assessment%20—%20Data.txt)**.
-Architecture, decisions, and trade-offs are documented in
-**[PLAN.md](PLAN.md)**. Project rules and prompt-logging convention
-are in **[CLAUDE.md](CLAUDE.md)**. The execution-session bridge for
-the next agent picking this up is in **[HANDOFF.md](HANDOFF.md)**.
+Architecture, decisions, trade-offs, and the as-built record are
+documented in **[PLAN.md](PLAN.md)**. Project rules and the
+prompt-logging convention are in **[CLAUDE.md](CLAUDE.md)**.
 
 ---
 
@@ -134,8 +133,7 @@ appear.
 ```
 .
 ├── CLAUDE.md                project rules (prompt logging, conventions)
-├── PLAN.md                  architecture, decisions, trade-offs
-├── HANDOFF.md               execution-session bridge for the next agent
+├── PLAN.md                  architecture, decisions, trade-offs, as-built record
 ├── README.md                this file
 ├── dbt_project.yml          dbt config + per-layer materialization defaults
 ├── packages.yml             dbt_utils, dbt_expectations (via git URLs)
@@ -143,10 +141,14 @@ appear.
 ├── requirements.txt         Python deps (dbt-duckdb, streamlit, plotly, …)
 ├── prompts.txt              chronological log of every prompt + response
 ├── resources/               raw TLC data (parquet) + zone lookup + dictionary
+├── app/
+│   └── streamlit_app.py     MetaCTO-themed dashboard (self-initializing)
+├── .streamlit/
+│   └── config.toml          Streamlit theme config
 ├── models/
 │   ├── staging/             bronze: typed views over sources
 │   ├── intermediate/        silver: cleansed → deduped → enriched
-│   └── marts/               gold: 1 row per chart's grain
+│   └── marts/               gold: facts/dims + Streamlit exposure
 ├── seeds/                   payment_types.csv, rate_codes.csv
 ├── tests/                   singular SQL tests (business invariants)
 ├── macros/                  custom Jinja (none yet)
