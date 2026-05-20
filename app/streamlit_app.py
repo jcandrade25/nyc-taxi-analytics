@@ -8,6 +8,10 @@ Visual identity follows the MetaCTO brand: deep teal-navy background
 (#0F2028), vibrant orange accent (#F18700), Barlow headings + Inter body.
 """
 
+import os
+import shutil
+import subprocess
+import sys
 import streamlit as st
 import duckdb
 import pandas as pd
@@ -63,7 +67,78 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-DB_PATH = Path(__file__).resolve().parent.parent / "dev.duckdb"
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+DB_PATH = PROJECT_ROOT / "dev.duckdb"
+
+
+# ---------------------------------------------------------------------------
+# Bootstrap — self-initialize the warehouse on first deploy
+# ---------------------------------------------------------------------------
+# Streamlit Community Cloud clones the repo and pip-installs requirements.txt,
+# but it does NOT run dbt. The warehouse file (dev.duckdb) is gitignored, so on
+# a fresh deploy it won't exist. This block runs `dbt deps` + `dbt build` once
+# to construct it from the committed parquet/CSV sources before the dashboard
+# loads. Locally, dev.duckdb already exists so this is a no-op.
+def _find_dbt() -> str:
+    """Locate the dbt console script. Prefer the one next to the running
+    interpreter (venv Scripts/bin) so it works whether or not that dir is on
+    PATH; fall back to PATH lookup, then a bare 'dbt'."""
+    bindir = Path(sys.executable).parent
+    for name in ("dbt", "dbt.exe"):
+        candidate = bindir / name
+        if candidate.exists():
+            return str(candidate)
+    return shutil.which("dbt") or "dbt"
+
+
+def _run_dbt(args, env):
+    return subprocess.run(
+        [_find_dbt(), *args],
+        cwd=str(PROJECT_ROOT),
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+
+
+@st.cache_resource(show_spinner=False)
+def ensure_database() -> bool:
+    """Build dev.duckdb via dbt if it is missing. Runs at most once per process."""
+    if DB_PATH.exists():
+        return True
+
+    # dbt needs a profiles.yml; the real one is gitignored, so generate it from
+    # the committed example and point DBT_PROFILES_DIR at the project root.
+    profile = PROJECT_ROOT / "profiles.yml"
+    if not profile.exists():
+        shutil.copyfile(PROJECT_ROOT / "profiles.yml.example", profile)
+
+    env = {**os.environ, "DBT_PROFILES_DIR": str(PROJECT_ROOT)}
+
+    with st.status("First-time setup: building the analytics warehouse…",
+                   expanded=True) as status:
+        st.write("Installing dbt packages (`dbt deps`)…")
+        deps = _run_dbt(["deps"], env)
+        if deps.returncode != 0:
+            status.update(label="dbt deps failed", state="error")
+            st.code((deps.stdout or "") + (deps.stderr or ""))
+            st.stop()
+
+        st.write("Building bronze → silver → gold models (`dbt build`)… "
+                 "this takes a minute on first boot.")
+        build = _run_dbt(["build"], env)
+        # dbt build returns non-zero only on test ERRORs; our pipeline uses
+        # warn-severity monitors, so a clean build exits 0. Surface real failures.
+        if build.returncode != 0 and not DB_PATH.exists():
+            status.update(label="dbt build failed", state="error")
+            st.code((build.stdout or "")[-4000:] + (build.stderr or "")[-2000:])
+            st.stop()
+
+        status.update(label="Warehouse ready", state="complete", expanded=False)
+    return True
+
+
+ensure_database()
 
 
 # ---------------------------------------------------------------------------
