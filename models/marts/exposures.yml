@@ -1,0 +1,19 @@
+version: 2
+
+exposures:
+  - name: streamlit_taxi_dashboard
+    type: dashboard
+    maturity: medium
+    description: >
+      Streamlit dashboard powered by the four gold-layer fact tables.
+      Reads dev.duckdb read-only via duckdb.connect(). Each chart
+      queries exactly one mart. Filters compile to WHERE clauses —
+      no in-app joins.
+    depends_on:
+      - ref('fct_trips_by_time')
+      - ref('fct_revenue_by_pickup_zone')
+      - ref('fct_payment_type_behavior')
+      - ref('fct_tip_rate_by_time')
+    owner:
+      name: "Juan Camilo Andrade"
+      email: "jcandrade25@github.com"
