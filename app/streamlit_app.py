@@ -1,17 +1,16 @@
 """
 NYC Yellow Taxi Analytics Dashboard
 ====================================
-Reads the gold-layer marts from dev.duckdb (read-only) and renders
-four Plotly visualizations. Each chart queries exactly one mart.
+Renders four Plotly visualizations from the gold-layer marts. Each chart
+queries exactly one mart. Data source resolves automatically:
+  - locally: the full dbt warehouse `dev.duckdb` (read-only), if present;
+  - on Streamlit Cloud / a fresh clone: the committed parquet snapshots of
+    the four marts in app/data/, so no dbt build is needed at runtime.
 
 Visual identity follows the MetaCTO brand: deep teal-navy background
 (#0F2028), vibrant orange accent (#F18700), Barlow headings + Inter body.
 """
 
-import os
-import shutil
-import subprocess
-import sys
 import streamlit as st
 import duckdb
 import pandas as pd
@@ -69,76 +68,7 @@ st.set_page_config(
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DB_PATH = PROJECT_ROOT / "dev.duckdb"
-
-
-# ---------------------------------------------------------------------------
-# Bootstrap — self-initialize the warehouse on first deploy
-# ---------------------------------------------------------------------------
-# Streamlit Community Cloud clones the repo and pip-installs requirements.txt,
-# but it does NOT run dbt. The warehouse file (dev.duckdb) is gitignored, so on
-# a fresh deploy it won't exist. This block runs `dbt deps` + `dbt build` once
-# to construct it from the committed parquet/CSV sources before the dashboard
-# loads. Locally, dev.duckdb already exists so this is a no-op.
-def _find_dbt() -> str:
-    """Locate the dbt console script. Prefer the one next to the running
-    interpreter (venv Scripts/bin) so it works whether or not that dir is on
-    PATH; fall back to PATH lookup, then a bare 'dbt'."""
-    bindir = Path(sys.executable).parent
-    for name in ("dbt", "dbt.exe"):
-        candidate = bindir / name
-        if candidate.exists():
-            return str(candidate)
-    return shutil.which("dbt") or "dbt"
-
-
-def _run_dbt(args, env):
-    return subprocess.run(
-        [_find_dbt(), *args],
-        cwd=str(PROJECT_ROOT),
-        env=env,
-        capture_output=True,
-        text=True,
-    )
-
-
-@st.cache_resource(show_spinner=False)
-def ensure_database() -> bool:
-    """Build dev.duckdb via dbt if it is missing. Runs at most once per process."""
-    if DB_PATH.exists():
-        return True
-
-    # dbt needs a profiles.yml; the real one is gitignored, so generate it from
-    # the committed example and point DBT_PROFILES_DIR at the project root.
-    profile = PROJECT_ROOT / "profiles.yml"
-    if not profile.exists():
-        shutil.copyfile(PROJECT_ROOT / "profiles.yml.example", profile)
-
-    env = {**os.environ, "DBT_PROFILES_DIR": str(PROJECT_ROOT)}
-
-    with st.status("First-time setup: building the analytics warehouse…",
-                   expanded=True) as status:
-        st.write("Installing dbt packages (`dbt deps`)…")
-        deps = _run_dbt(["deps"], env)
-        if deps.returncode != 0:
-            status.update(label="dbt deps failed", state="error")
-            st.code((deps.stdout or "") + (deps.stderr or ""))
-            st.stop()
-
-        st.write("Building bronze → silver → gold models (`dbt build`)… "
-                 "this takes a minute on first boot.")
-        build = _run_dbt(["build"], env)
-        # dbt build returns non-zero only on test ERRORs; our pipeline uses
-        # warn-severity monitors, so a clean build exits 0. Surface real failures.
-        if build.returncode != 0 and not DB_PATH.exists():
-            status.update(label="dbt build failed", state="error")
-            st.code((build.stdout or "")[-4000:] + (build.stderr or "")[-2000:])
-            st.stop()
-
-        status.update(label="Warehouse ready", state="complete", expanded=False)
-    return True
-
-
-ensure_database()
+DATA_DIR = Path(__file__).resolve().parent / "data"
 
 
 # ---------------------------------------------------------------------------
@@ -278,11 +208,27 @@ def caveat(text=CASH_TIP_CAVEAT):
 
 
 # ---------------------------------------------------------------------------
-# Database helpers
+# Data layer — resolve the source automatically
 # ---------------------------------------------------------------------------
+# If the full dbt warehouse exists (local dev), read its mart tables. On a
+# fresh clone / Streamlit Cloud it won't exist, so fall back to the committed
+# parquet snapshots in app/data/. Either way the queries are identical apart
+# from the relation name.
+USING_WAREHOUSE = DB_PATH.exists()
+
+
 @st.cache_resource
 def get_connection():
-    return duckdb.connect(str(DB_PATH), read_only=True)
+    if USING_WAREHOUSE:
+        return duckdb.connect(str(DB_PATH), read_only=True)
+    return duckdb.connect(":memory:")  # queries hit read_parquet() directly
+
+
+def _mart(name: str) -> str:
+    """SQL relation for a mart: warehouse table locally, parquet file otherwise."""
+    if USING_WAREHOUSE:
+        return f"main_marts.{name}"
+    return f"read_parquet('{(DATA_DIR / (name + '.parquet')).as_posix()}')"
 
 
 def run_query(sql: str) -> pd.DataFrame:
@@ -291,43 +237,43 @@ def run_query(sql: str) -> pd.DataFrame:
 
 @st.cache_data(ttl=300)
 def load_trips_by_time() -> pd.DataFrame:
-    return run_query("""
+    return run_query(f"""
         select pickup_date, pickup_hour, iso_week, day_of_week, is_weekend,
                trip_count, total_fare_usd, total_revenue_usd,
                avg_trip_distance_miles, avg_trip_duration_minutes
-        from main_marts.fct_trips_by_time
+        from {_mart('fct_trips_by_time')}
         order by pickup_date, pickup_hour
     """)
 
 
 @st.cache_data(ttl=300)
 def load_revenue_by_zone() -> pd.DataFrame:
-    return run_query("""
+    return run_query(f"""
         select pickup_location_id, pickup_borough, pickup_zone_name, pickup_service_zone,
                trip_count, total_revenue_usd, total_fare_usd, avg_fare_usd,
                total_tips_usd, avg_total_amount_usd
-        from main_marts.fct_revenue_by_pickup_zone
+        from {_mart('fct_revenue_by_pickup_zone')}
         order by total_revenue_usd desc
     """)
 
 
 @st.cache_data(ttl=300)
 def load_payment_type_behavior() -> pd.DataFrame:
-    return run_query("""
+    return run_query(f"""
         select payment_type, payment_type_label, trip_count, total_revenue_usd,
                avg_fare_usd, avg_tip_usd, avg_tip_pct, avg_trip_distance_miles,
                avg_trip_duration_minutes, airport_trip_count
-        from main_marts.fct_payment_type_behavior
+        from {_mart('fct_payment_type_behavior')}
         order by trip_count desc
     """)
 
 
 @st.cache_data(ttl=300)
 def load_tip_rate_by_time() -> pd.DataFrame:
-    return run_query("""
+    return run_query(f"""
         select day_of_week, day_of_week_num, hour_of_day,
                trip_count, avg_tip_pct, avg_tip_usd, avg_fare_usd
-        from main_marts.fct_tip_rate_by_time
+        from {_mart('fct_tip_rate_by_time')}
         order by day_of_week_num, hour_of_day
     """)
 
