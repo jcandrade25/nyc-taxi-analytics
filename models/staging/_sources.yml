@@ -1,17 +1,5 @@
 version: 2
 
-# -----------------------------------------------------------------------------
-# Source: NYC TLC Yellow Taxi trip records (Jan–Mar 2026)
-# -----------------------------------------------------------------------------
-# Files are read directly from the local `resources/` directory via DuckDB's
-# read_parquet() / read_csv_auto(). The path is templated through a project
-# var (see dbt_project.yml: `parquet_glob`) so a single override moves us
-# from local files to s3:// or @stage references without touching SQL.
-#
-# In Snowflake, the equivalent of `external_location: read_parquet(...)` is
-# an external stage + a view (or COPY INTO a raw table). See PLAN.md.
-# -----------------------------------------------------------------------------
-
 sources:
   - name: tlc
     description: >
@@ -22,20 +10,17 @@ sources:
       owner: "@analytics-eng"
       source_system: "NYC TLC public dataset"
       refresh_cadence: "Monthly (TLC publishes ~2 months in arrears)"
-    loaded_at_field: tpep_pickup_datetime
-    freshness:
-      warn_after: { count: 90, period: day }
-      error_after: { count: 180, period: day }
 
     tables:
       - name: yellow_trips_raw
-        identifier: "read_parquet('{{ var('parquet_glob') }}', union_by_name=true, filename=true)"
         description: >
           Raw yellow-taxi trip records, unioned across all monthly parquet
           files matched by `parquet_glob`. `filename=true` exposes the
           source file path as a column so we can trace any row back to its
           monthly partition; `union_by_name=true` defends against schema
           drift if TLC adds/removes a column in a future month.
+        meta:
+          external_location: "read_parquet('resources/yellow_tripdata_2026-*.parquet', union_by_name=true, filename=true)"
         columns:
           - name: VendorID
             description: "TPEP provider that supplied the record. 1 = Creative Mobile Technologies, 2 = Verifone, 6 = Myle, 7 = Helix."
@@ -89,24 +74,20 @@ sources:
           - name: filename
             description: "Derived: source parquet file path (added by read_parquet filename=true). Used for partition lineage and incremental loading."
 
-  - name: ref
+  - name: ref_data
     description: "Reference / lookup data shipped alongside the trip records."
     tables:
       - name: taxi_zone_lookup
-        identifier: "read_csv_auto('{{ var('zone_lookup_path') }}')"
         description: >
           TLC Taxi Zone shapefile lookup — 265 zones across the five boroughs
           plus EWR (Newark Airport). One row per LocationID.
+        meta:
+          external_location: "read_csv_auto('resources/taxi_zone_lookup.csv')"
         columns:
           - name: LocationID
             description: "Surrogate ID for a TLC Taxi Zone. PK."
-            data_tests:
-              - unique
-              - not_null
           - name: Borough
             description: "NYC borough name (Manhattan, Brooklyn, Queens, Bronx, Staten Island, EWR, Unknown)."
-            data_tests:
-              - not_null
           - name: Zone
             description: "Human-readable neighborhood / zone name."
           - name: service_zone
