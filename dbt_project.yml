@@ -14,6 +14,10 @@ test-paths: ["tests"]
 seed-paths: ["seeds"]
 macro-paths: ["macros"]
 snapshot-paths: ["snapshots"]
+# Discover doc blocks under both models/ (the dbt default) and docs/.
+# Putting reusable caveat blocks in docs/ keeps them findable without
+# living next to a specific model.
+docs-paths: ["docs", "models"]
 
 clean-targets:
   - "target"
@@ -21,16 +25,19 @@ clean-targets:
   - "logs"
 
 # Layered materialization defaults — overridable per model:
-#   staging      → view       (cheap, always-fresh wrapper over source)
-#   intermediate → ephemeral  (compiled inline; no warehouse object)
-#   marts        → table      (materialized for dashboard read performance)
+#   staging      -> view       (cheap, always-fresh wrapper over source)
+#   intermediate -> table      (NOT ephemeral - four gold marts consume
+#                               int_trips__enriched and ephemeral would
+#                               inline the zone + payment joins four
+#                               times; PLAN.md section 2 has the full reasoning)
+#   marts        -> table      (materialized for dashboard read performance)
 models:
   nyc_taxi_analytics:
     staging:
       +materialized: view
       +schema: staging
     intermediate:
-      +materialized: ephemeral
+      +materialized: table
       +schema: intermediate
     marts:
       +materialized: table
@@ -39,17 +46,22 @@ models:
 seeds:
   nyc_taxi_analytics:
     +schema: seeds
-    # taxi_zone_lookup is loaded via read_csv_auto in the staging
-    # source instead — keeping seeds/ empty for now but ready if we
-    # want to ship a curated lookup with the repo.
+    # payment_types.csv and rate_codes.csv - TLC code-to-label
+    # mappings. See PLAN.md section 8 for why these are seeds and not
+    # inlined CTEs.
 
 # Variables: set a single place to swap which months are loaded. The
 # staging sources reference these via {{ var('parquet_glob') }} so
 # adding April just means editing this list.
+#
+# Paths are relative to the dbt project root (where this file lives).
+# resources/ is a subdirectory of the project root - committed so
+# anyone who clones the repo can `dbt build` end-to-end with no extra
+# downloads.
 vars:
-  parquet_glob: "{{ env_var('TAXI_PARQUET_GLOB', '../resources/yellow_tripdata_2026-*.parquet') }}"
-  zone_lookup_path: "{{ env_var('TAXI_ZONE_LOOKUP', '../resources/taxi_zone_lookup.csv') }}"
-  # Trip filters used by intermediate cleansing model — exposed as
+  parquet_glob: "{{ env_var('TAXI_PARQUET_GLOB', 'resources/yellow_tripdata_2026-*.parquet') }}"
+  zone_lookup_path: "{{ env_var('TAXI_ZONE_LOOKUP', 'resources/taxi_zone_lookup.csv') }}"
+  # Trip filters used by intermediate cleansing model - exposed as
   # vars so analysts can widen/tighten without editing SQL.
   min_trip_distance_miles: 0
   max_trip_distance_miles: 100
