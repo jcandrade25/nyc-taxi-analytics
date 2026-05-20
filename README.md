@@ -52,8 +52,8 @@ The four dashboard visualizations:
 
 ## Quickstart
 
-Prereqs: Python 3.10+, git, ~200 MB of disk for the warehouse file
-once built.
+Prereqs: Python 3.10–3.12 (dbt-core 1.9 does not yet support 3.13/3.14),
+git, ~200 MB of disk for the warehouse file once built.
 
 ```bash
 # 1. clone
