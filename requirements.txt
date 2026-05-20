@@ -1,14 +1,23 @@
-# dbt + adapter — pinned to a 1.8.x line that's compatible with the
-# dbt_utils / dbt_expectations versions in packages.yml.
-dbt-core>=1.8.0,<1.10.0
-dbt-duckdb>=1.8.0,<1.10.0
+# Python dependencies, pinned to the versions verified locally and used by
+# the Streamlit Community Cloud deploy.
+#
+# IMPORTANT: deploy on Python 3.12. dbt-core 1.9 fails to import on 3.13/3.14
+# (mashumaro). Set the Python version to 3.12 in Streamlit Cloud → Advanced
+# settings when deploying.
+#
+# NOTE: dbt-utils / dbt-expectations / dbt-date are dbt packages, NOT pip
+# packages. They live in packages.yml and are installed by `dbt deps`
+# (run automatically by the app's bootstrap on first deploy).
 
-# DuckDB engine. dbt-duckdb pulls a compatible version, but pinning
-# explicitly keeps the Streamlit reader on the same build.
-duckdb>=1.0.0,<2.0.0
+# dbt + DuckDB adapter
+dbt-core==1.9.10
+dbt-duckdb==1.9.6
 
-# Streamlit dashboard + Plotly viz (per CLAUDE.md project context).
-streamlit>=1.36.0
-plotly>=5.22.0
-pandas>=2.2.0
-pyarrow>=16.0.0
+# DuckDB engine (shared by dbt and the Streamlit read-only reader)
+duckdb==1.5.2
+
+# Dashboard
+streamlit==1.57.0
+plotly==6.7.0
+pandas==3.0.3
+pyarrow==24.0.0
