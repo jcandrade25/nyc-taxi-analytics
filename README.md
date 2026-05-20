@@ -78,9 +78,38 @@ dbt build                          # full bronze → silver → gold + tests
 streamlit run app/streamlit_app.py
 ```
 
-The full build takes ~30 s on a laptop. After it completes,
-`dev.duckdb` is a ~150 MB file sitting next to the project; the
-Streamlit app opens it read-only.
+The full build takes ~50 s on a laptop. After it completes,
+`dev.duckdb` sits next to the project (~2 GB — the three silver tables
+plus `fct_trips` each hold ~11M rows); the Streamlit app opens it
+read-only.
+
+---
+
+## Deploy to Streamlit Community Cloud
+
+The app **self-initializes**: `app/streamlit_app.py` checks for
+`dev.duckdb` on startup and, if it's missing (as on a fresh Cloud
+deploy), runs `dbt deps` + `dbt build` via subprocess before loading the
+dashboard. The raw parquet/CSV sources are committed to the repo, so no
+manual setup is needed.
+
+To deploy:
+
+1. Push this repo to GitHub (public).
+2. On [share.streamlit.io](https://share.streamlit.io), create an app from
+   the repo with **Main file path** = `app/streamlit_app.py`.
+3. In **Advanced settings**, set **Python version = 3.12** (dbt-core 1.9
+   does not import on 3.13/3.14).
+4. Deploy. The first boot runs the dbt build (~1–2 min behind a status
+   panel); subsequent boots reuse the warehouse.
+
+> **Resource note.** The full dataset materializes ~40M rows across the
+> silver/gold tables and the warehouse file reaches ~2 GB. Streamlit
+> Community Cloud's free tier (~1 GB RAM) may struggle with the
+> first-boot build. If the build OOMs or times out, the cheapest fix is
+> to load **one month** instead of three — set the `TAXI_PARQUET_GLOB`
+> env var (or edit `parquet_glob` in `dbt_project.yml`) to a single
+> file. The pipeline is identical; only the row count changes.
 
 ---
 
