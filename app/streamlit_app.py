@@ -51,9 +51,10 @@ HEATMAP_SCALE = [
 DAY_ORDER = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
 CASH_TIP_CAVEAT = (
-    "Tip data is available only for credit-card transactions (payment_type = 1). "
-    "Cash tips are not captured by TLC meters and appear as $0.00 — they are "
-    "unobserved, not zero."
+    "Tips are observed only when captured digitally — credit-card (payment_type 1) "
+    "and app-hailed Flex Fare (payment_type 0), including genuine $0.00 tips. Cash "
+    "is never metered (it shows as $0.00 but is unobserved, not zero), so cash and "
+    "non-standard settlements are excluded from tip-rate analysis."
 )
 
 # ---------------------------------------------------------------------------
@@ -272,7 +273,8 @@ def load_payment_type_behavior() -> pd.DataFrame:
 def load_tip_rate_by_time() -> pd.DataFrame:
     return run_query(f"""
         select day_of_week, day_of_week_num, hour_of_day,
-               trip_count, avg_tip_pct, avg_tip_usd, avg_fare_usd
+               trip_count, avg_tip_pct, avg_tip_usd, avg_fare_usd,
+               cc_trip_count, cc_avg_tip_pct
         from {_mart('fct_tip_rate_by_time')}
         order by day_of_week_num, hour_of_day
     """)
@@ -307,12 +309,18 @@ with tab1:
     df_time = load_trips_by_time()
     df_time["pickup_date"] = pd.to_datetime(df_time["pickup_date"])
 
-    # KPIs first
+    # KPIs first. Distance/duration are trip-count-weighted means — the mart
+    # rows are per-hour averages, so a plain .mean() would average the hourly
+    # averages and ignore how many trips each hour carried.
+    trips_total = df_time["trip_count"].sum()
+    w_distance = (df_time["avg_trip_distance_miles"] * df_time["trip_count"]).sum() / trips_total
+    w_duration = (df_time["avg_trip_duration_minutes"] * df_time["trip_count"]).sum() / trips_total
+
     c1, c2, c3, c4 = st.columns(4)
-    kpi_card(c1, "Total Trips", f"{int(df_time['trip_count'].sum()):,}", accent=True)
+    kpi_card(c1, "Total Trips", f"{int(trips_total):,}", accent=True)
     kpi_card(c2, "Total Revenue", f"${df_time['total_revenue_usd'].sum():,.0f}")
-    kpi_card(c3, "Avg Distance", f"{df_time['avg_trip_distance_miles'].mean():.1f} mi")
-    kpi_card(c4, "Avg Duration", f"{df_time['avg_trip_duration_minutes'].mean():.0f} min")
+    kpi_card(c3, "Avg Distance", f"{w_distance:.1f} mi")
+    kpi_card(c4, "Avg Duration", f"{w_duration:.0f} min")
 
     st.write("")
     st.markdown('<div class="mc-section">Trip Volume Over Time</div>', unsafe_allow_html=True)
@@ -342,7 +350,7 @@ with tab1:
         fig.update_traces(marker_color=BRAND["orange"])
 
     fig.update_layout(hovermode="x unified", height=440)
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
 # =========================================================================
 # TAB 2: Revenue by Pickup Zone
@@ -371,7 +379,7 @@ with tab2:
                       marker_line_color=BRAND["orange_soft"], marker_line_width=0)
     fig.update_layout(height=max(420, n_zones * 26),
                       title=f"Top {n_zones} Pickup Zones by {sort_metric}")
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
 # =========================================================================
 # TAB 3: Payment Type Analysis
@@ -387,14 +395,14 @@ with tab3:
                          color_discrete_sequence=CATEGORICAL)
         fig_pie.update_traces(textposition="outside", textinfo="percent+label")
         fig_pie.update_layout(title="Trip Share by Payment Type", showlegend=False, height=420)
-        st.plotly_chart(fig_pie, use_container_width=True)
+        st.plotly_chart(fig_pie, width="stretch")
     with col2:
         fig_rev = px.bar(df_pay, x="payment_type_label", y="total_revenue_usd",
                          labels={"payment_type_label": "", "total_revenue_usd": "Revenue ($)"},
                          template=PLOTLY_TPL)
         fig_rev.update_traces(marker_color=BRAND["teal"])
         fig_rev.update_layout(title="Total Revenue by Payment Type", height=420)
-        st.plotly_chart(fig_rev, use_container_width=True)
+        st.plotly_chart(fig_rev, width="stretch")
 
     st.markdown('<div class="mc-section">Behavior Comparison</div>', unsafe_allow_html=True)
     caveat()
@@ -407,42 +415,56 @@ with tab3:
             "avg_tip_pct": "Avg Tip %", "avg_trip_distance_miles": "Avg Distance (mi)",
             "avg_trip_duration_minutes": "Avg Duration (min)", "airport_trip_count": "Airport Trips",
         }),
-        use_container_width=True, hide_index=True,
+        width="stretch", hide_index=True,
         column_config={"Trips": st.column_config.NumberColumn(format="%d")},
     )
 
 # =========================================================================
-# TAB 4: Tip-Rate Heatmap (credit card only)
+# TAB 4: Tip-Rate Heatmap (observed tips; toggle for credit-card-only)
 # =========================================================================
 with tab4:
     df_tip = load_tip_rate_by_time()
 
-    st.markdown('<div class="mc-section">Tip-Rate Heatmap · Credit Card Only</div>',
+    st.markdown('<div class="mc-section">Tip-Rate Heatmap · Observed Tips</div>',
                 unsafe_allow_html=True)
     caveat()
 
+    # Toggle the observability population. "All observed" = credit card +
+    # app-hailed Flex Fare (the not-is_cash_tip_unobservable set the mart is
+    # built on); "Credit card only" = the cc slice carried in the mart.
+    view = st.radio(
+        "Population",
+        ["All observed tips (card + app-pay)", "Credit card only"],
+        horizontal=True, key="tip_view", label_visibility="collapsed",
+    )
+    if view == "Credit card only":
+        pct_col, cnt_col, who = "cc_avg_tip_pct", "cc_trip_count", "credit card only"
+    else:
+        pct_col, cnt_col, who = "avg_tip_pct", "trip_count", "card + app-pay"
+
     pivot = df_tip.pivot_table(index="day_of_week", columns="hour_of_day",
-                               values="avg_tip_pct", aggfunc="mean").reindex(DAY_ORDER)
+                               values=pct_col, aggfunc="mean").reindex(DAY_ORDER)
     fig = go.Figure(data=go.Heatmap(
         z=pivot.values, x=[f"{int(h):02d}:00" for h in pivot.columns], y=pivot.index.tolist(),
         colorscale=HEATMAP_SCALE, colorbar=dict(title="Avg Tip %"),
         hovertemplate="Day: %{y}<br>Hour: %{x}<br>Avg Tip: %{z:.1f}%<extra></extra>",
     ))
-    fig.update_layout(template=PLOTLY_TPL, title="Average Tip % by Day of Week × Hour",
+    fig.update_layout(template=PLOTLY_TPL,
+                      title=f"Average Tip % by Day of Week × Hour · {who}",
                       xaxis_title="Hour of Day", yaxis_title="", height=440)
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
     with st.expander("Trip count by time slot (confidence weighting)"):
         pivot_c = df_tip.pivot_table(index="day_of_week", columns="hour_of_day",
-                                     values="trip_count", aggfunc="sum").reindex(DAY_ORDER)
+                                     values=cnt_col, aggfunc="sum").reindex(DAY_ORDER)
         fig_c = go.Figure(data=go.Heatmap(
             z=pivot_c.values, x=[f"{int(h):02d}:00" for h in pivot_c.columns], y=pivot_c.index.tolist(),
             colorscale="Teal", colorbar=dict(title="Trips"),
             hovertemplate="Day: %{y}<br>Hour: %{x}<br>Trips: %{z:,.0f}<extra></extra>",
         ))
-        fig_c.update_layout(template=PLOTLY_TPL, title="Credit-Card Trip Count by Day × Hour",
+        fig_c.update_layout(template=PLOTLY_TPL, title=f"Trip count by Day × Hour · {who}",
                             xaxis_title="Hour of Day", yaxis_title="", height=400)
-        st.plotly_chart(fig_c, use_container_width=True)
+        st.plotly_chart(fig_c, width="stretch")
 
 # ---------------------------------------------------------------------------
 # Footer
