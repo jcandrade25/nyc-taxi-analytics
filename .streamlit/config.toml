@@ -1,0 +1,18 @@
+# MetaCTO-branded dark theme.
+# Palette sourced from metacto.com: deep teal-navy background (#0F2028),
+# vibrant orange accent (#F18700), Barlow headings + Inter body.
+
+[theme]
+base = "dark"
+primaryColor = "#F18700"
+backgroundColor = "#0F2028"
+secondaryBackgroundColor = "#16323D"
+textColor = "#E8EEF1"
+linkColor = "#F5A23D"
+borderColor = "#274350"
+baseRadius = "0.75rem"
+font = "Inter, sans-serif"
+headingFont = "Barlow, sans-serif"
+
+[server]
+headless = true
