@@ -1,23 +1,13 @@
-# Python dependencies, pinned to the versions verified locally and used by
-# the Streamlit Community Cloud deploy.
+# Runtime dependencies for the Streamlit dashboard (what Streamlit Community
+# Cloud installs). The deployed app reads the committed parquet mart snapshots
+# in app/data/ via DuckDB and does NOT run dbt — so dbt is not needed here.
+# For local dbt development (building the warehouse / regenerating the marts),
+# install requirements-dev.txt instead.
 #
-# IMPORTANT: deploy on Python 3.12. dbt-core 1.9 fails to import on 3.13/3.14
-# (mashumaro). Set the Python version to 3.12 in Streamlit Cloud → Advanced
-# settings when deploying.
-#
-# NOTE: dbt-utils / dbt-expectations / dbt-date are dbt packages, NOT pip
-# packages. They live in packages.yml and are installed by `dbt deps`
-# (run automatically by the app's bootstrap on first deploy).
+# Pinned to the versions verified locally on Python 3.12.
 
-# dbt + DuckDB adapter
-dbt-core==1.9.10
-dbt-duckdb==1.9.6
-
-# DuckDB engine (shared by dbt and the Streamlit read-only reader)
-duckdb==1.5.2
-
-# Dashboard
 streamlit==1.57.0
 plotly==6.7.0
 pandas==3.0.3
+duckdb==1.5.2
 pyarrow==24.0.0

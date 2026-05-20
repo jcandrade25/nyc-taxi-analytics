@@ -1,0 +1,15 @@
+# Local development dependencies: the dashboard runtime plus dbt for building
+# the bronze -> silver -> gold warehouse and regenerating the committed mart
+# snapshots (python export_marts.py).
+#
+# IMPORTANT: use Python 3.12. dbt-core 1.9 fails to import on 3.13/3.14
+# (mashumaro). The deployed app does not use dbt, so the Cloud runtime
+# (requirements.txt) has no such constraint.
+#
+# dbt packages (dbt-utils / dbt-expectations / dbt-date) are NOT pip packages;
+# they live in packages.yml and are installed by `dbt deps`.
+
+-r requirements.txt
+
+dbt-core==1.9.10
+dbt-duckdb==1.9.6
